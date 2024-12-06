@@ -38,8 +38,13 @@ namespace ArashiDNS.Comet
             var nsARecord = new DnsClient(Server, 10000).Resolve(nsServerName)?.AnswerRecords.First();
             var nsAddress = ((ARecord)nsARecord).Address;
 
-            var response = await new DnsClient(nsAddress, 10000).ResolveAsync(quest.Name, quest.RecordType);
-            response.TransactionID = e.Query.TransactionID;
+            var answer = await new DnsClient(nsAddress, 10000).ResolveAsync(quest.Name, quest.RecordType);
+            
+            var response = query.CreateResponseInstance();
+            response.ReturnCode = answer.ReturnCode;
+            response.IsRecursionAllowed = true;
+            response.IsRecursionDesired = true;
+            response.AnswerRecords.AddRange(answer.AnswerRecords);
             e.Response = response;
         }
     }
