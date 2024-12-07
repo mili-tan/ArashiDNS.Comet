@@ -1,5 +1,7 @@
 ﻿using ARSoft.Tools.Net.Dns;
+using Org.BouncyCastle.Tls;
 using System.Net;
+using ARSoft.Tools.Net;
 
 namespace ArashiDNS.Comet
 {
@@ -7,6 +9,7 @@ namespace ArashiDNS.Comet
     {
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
+        public static int Timeout = 5000;
 
         static void Main(string[] args)
         {
@@ -31,22 +34,85 @@ namespace ArashiDNS.Comet
         private static async Task DnsServerOnQueryReceived(object sender, QueryReceivedEventArgs e)
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
-            var quest = query.Questions.First();
-            var nsRecord = new DnsClient(Server, 10000).Resolve(quest.Name, RecordType.Ns).AnswerRecords.First();
-            var nsServerName = ((NsRecord)nsRecord).NameServer;
 
-            var nsARecord = new DnsClient(Server, 10000).Resolve(nsServerName)?.AnswerRecords.First();
-            var nsAddress = ((ARecord)nsARecord).Address;
+            var nsServerNames = await NameServerResolve(query);
+            if (nsServerNames.Count == 0)
+            {
+                e.Response = query.CreateResponseInstance();
+                e.Response.ReturnCode = ReturnCode.NxDomain;
+                return;
+            }
 
-            var answer = await new DnsClient(nsAddress, 10000).ResolveAsync(quest.Name, quest.RecordType,
-                options: new DnsQueryOptions() {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
-            
-            var response = query.CreateResponseInstance();
-            response.ReturnCode = answer.ReturnCode;
-            response.IsRecursionAllowed = true;
-            response.IsRecursionDesired = true;
-            response.AnswerRecords.AddRange(answer.AnswerRecords);
-            e.Response = response;
+            var answer = await ResultResolve(nsServerNames, query);
+            if (answer == null)
+            {
+                e.Response = query.CreateResponseInstance();
+                e.Response.ReturnCode = ReturnCode.ServerFailure;
+            }
+            else
+            {
+                var response = query.CreateResponseInstance();
+                response.ReturnCode = answer.ReturnCode;
+                response.IsRecursionAllowed = true;
+                response.IsRecursionDesired = true;
+                response.AnswerRecords.AddRange(answer.AnswerRecords);
+                e.Response = response;
+
+                //answer.TransactionID = query.TransactionID;
+                //e.Response = answer;
+            }
+        }
+
+        private static async Task<List<DomainName>> NameServerResolve(DnsMessage query)
+        {
+            var name = query.Questions.First().Name;
+            var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
+
+            if (nsResolve?.AnswerRecords.Count == 0)
+            {
+                while (nsResolve?.AnswerRecords.Count == 0)
+                {
+                    if (name.LabelCount <= 1)
+                        return [];
+                    name = name.GetParentName();
+                    nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
+                }
+
+            }
+
+            return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
+                .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
+        }
+
+        private static async Task<DnsMessage?> ResultResolve(List<DomainName> nsServerNames, DnsMessage query)
+        {
+            try
+            {
+                var quest = query.Questions.First();
+
+                foreach (var item in nsServerNames)
+                {
+                    var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item))?.AnswerRecords ?? [];
+                    var nsAddresses = nsARecords.Where(x => x.RecordType == RecordType.A).Select(x => ((ARecord)x).Address);
+
+                    foreach (var address in nsAddresses)
+                    {
+                        var answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType,
+                            options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
+                        if (answer == null || answer.ReturnCode == ReturnCode.ServerFailure) continue;
+
+                        if (answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
+                            answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType) ?? answer;
+                        return answer;
+                    }
+                }
+                return null;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                return null;
+            }
         }
     }
 }
