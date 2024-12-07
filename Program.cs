@@ -38,7 +38,8 @@ namespace ArashiDNS.Comet
             var nsARecord = new DnsClient(Server, 10000).Resolve(nsServerName)?.AnswerRecords.First();
             var nsAddress = ((ARecord)nsARecord).Address;
 
-            var answer = await new DnsClient(nsAddress, 10000).ResolveAsync(quest.Name, quest.RecordType);
+            var answer = await new DnsClient(nsAddress, 10000).ResolveAsync(quest.Name, quest.RecordType,
+                options: new DnsQueryOptions() {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
             
             var response = query.CreateResponseInstance();
             response.ReturnCode = answer.ReturnCode;
