@@ -2,6 +2,7 @@
 using Org.BouncyCastle.Tls;
 using System.Net;
 using ARSoft.Tools.Net;
+using NStack;
 
 namespace ArashiDNS.Comet
 {
@@ -10,6 +11,7 @@ namespace ArashiDNS.Comet
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static int Timeout = 5000;
+        public static TldExtract TldExtractor = new();
 
         static void Main(string[] args)
         {
@@ -66,19 +68,13 @@ namespace ArashiDNS.Comet
         private static async Task<List<DomainName>> NameServerResolve(DnsMessage query)
         {
             var name = query.Questions.First().Name;
-            var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
+            //var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
 
-            if (nsResolve?.AnswerRecords.Count == 0)
-            {
-                while (nsResolve?.AnswerRecords.Count == 0)
-                {
-                    if (name.LabelCount <= 1)
-                        return [];
-                    name = name.GetParentName();
-                    nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
-                }
-
-            }
+            var tld = TldExtractor.Extract(name.ToString());
+            var rootName = string.IsNullOrWhiteSpace(tld.tld)
+                ? name.GetParentName()
+                : DomainName.Parse(tld.root + "." + tld.tld);
+            var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(rootName, RecordType.Ns);
 
             return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
                 .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
