@@ -37,15 +37,29 @@ namespace ArashiDNS.Comet
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
-            var nsServerNames = await NameServerResolve(query);
+            var nsServerNames = await GetNameServerName(query);
             if (nsServerNames.Count == 0)
             {
                 e.Response = query.CreateResponseInstance();
                 e.Response.ReturnCode = ReturnCode.NxDomain;
                 return;
             }
+            var nsServerIPs = await GetNameServerIp(nsServerNames);
+            if (nsServerIPs.Count == 0)
+            {
+                e.Response = query.CreateResponseInstance();
+                e.Response.ReturnCode = ReturnCode.NxDomain;
+                return;
+            }
 
-            var answer = await ResultResolve(nsServerNames, query);
+            var answer = await ResultResolve(nsServerIPs, query);
+            if (answer == null || answer.AnswerRecords.Count == 0)
+            {
+                nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
+                nsServerIPs = await GetNameServerIp(nsServerNames);
+            }
+            answer = await ResultResolve(nsServerIPs, query);
+
             if (answer == null)
             {
                 e.Response = query.CreateResponseInstance();
@@ -65,41 +79,74 @@ namespace ArashiDNS.Comet
             }
         }
 
-        private static async Task<List<DomainName>> NameServerResolve(DnsMessage query)
+        private static async Task<List<DomainName>> GetNameServerName(DnsMessage query)
         {
             var name = query.Questions.First().Name;
             //var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
 
             var tld = TldExtractor.Extract(name.ToString());
-            var rootName = string.IsNullOrWhiteSpace(tld.tld)
-                ? name.GetParentName()
-                : DomainName.Parse(tld.root + "." + tld.tld);
+            var rootName = name.LabelCount == 2
+                ? name
+                : string.IsNullOrWhiteSpace(tld.tld)
+                    ? name.GetParentName()
+                    : DomainName.Parse(tld.root + "." + tld.tld);
+
+            //Console.WriteLine(tld);
+            //Console.WriteLine(rootName);
+
             var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(rootName, RecordType.Ns);
 
             return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
                 .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
         }
 
-        private static async Task<DnsMessage?> ResultResolve(List<DomainName> nsServerNames, DnsMessage query)
+        private static async Task<List<DomainName>> GetNameServerName(DomainName name, IPAddress ipAddress)
+        {
+            var nsResolve = await new DnsClient(ipAddress, Timeout).ResolveAsync(name, RecordType.Ns);
+
+            return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
+                .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
+        }
+
+
+        private static async Task<List<IPAddress>> GetNameServerIp(List<DomainName> nsServerNames)
+        {
+            foreach (var item in nsServerNames)
+            {
+                try
+                {
+                    var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item))?.AnswerRecords ?? [];
+                    return nsARecords.Where(x => x.RecordType == RecordType.A)
+                        .Select(x => ((ARecord)x).Address).ToList();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
+            }
+
+            return null;
+        }
+
+        private static async Task<DnsMessage?> ResultResolve(List<IPAddress> nsAddresses, DnsMessage query)
         {
             try
             {
                 var quest = query.Questions.First();
 
-                foreach (var item in nsServerNames)
+                foreach (var address in nsAddresses)
                 {
-                    var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item))?.AnswerRecords ?? [];
-                    var nsAddresses = nsARecords.Where(x => x.RecordType == RecordType.A).Select(x => ((ARecord)x).Address);
-
-                    foreach (var address in nsAddresses)
+                    try
                     {
                         var answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType,
                             options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
-                        if (answer == null || answer.ReturnCode == ReturnCode.ServerFailure) continue;
-
                         if (answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
                             answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType) ?? answer;
                         return answer;
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
                     }
                 }
                 return null;
