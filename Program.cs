@@ -87,7 +87,7 @@ namespace ArashiDNS.Comet
             var rootName = name.LabelCount == 2
                 ? name
                 : string.IsNullOrWhiteSpace(tld.tld)
-                    ? name.GetParentName()
+                    ? DomainName.Parse(string.Join('.', name.Labels.TakeLast(2)))
                     : DomainName.Parse(tld.root + "." + tld.tld);
 
             //Console.WriteLine(tld);
@@ -141,7 +141,8 @@ namespace ArashiDNS.Comet
                             options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
                         if (answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
                             answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType) ?? answer;
-                        return answer;
+                        if (answer != null)
+                            return answer;
                     }
                     catch (Exception e)
                     {
