@@ -56,8 +56,8 @@ namespace ArashiDNS.Comet
             {
                 nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
                 nsServerIPs = await GetNameServerIp(nsServerNames);
+                answer = await ResultResolve(nsServerIPs, query);
             }
-            answer = await ResultResolve(nsServerIPs, query);
 
             if (answer == null)
             {
