@@ -157,7 +157,8 @@ namespace ArashiDNS.Comet
                     queryTimeout: Timeout);
 
                 var answer = await client.ResolveAsync(quest.Name, quest.RecordType,
-                    options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
+                    options: new DnsQueryOptions
+                        {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
 
                 if (answer is {AnswerRecords.Count: 0} &&
                     answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns))
@@ -167,7 +168,9 @@ namespace ArashiDNS.Comet
                             .Select(x => ((NsRecord) x).NameServer).ToList()),
                         query);
                 }
-                if (answer == null || answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
+
+                if (answer == null ||
+                    (answer.ReturnCode != ReturnCode.NoError && answer.ReturnCode != ReturnCode.NxDomain))
                     answer = await client.ResolveAsync(quest.Name, quest.RecordType) ?? answer;
 
                 return answer;
