@@ -2,6 +2,7 @@
 using ARSoft.Tools.Net.Dns;
 using NStack;
 using System.Net;
+using DeepCloner.Core;
 using IPAddress = System.Net.IPAddress;
 
 namespace ArashiDNS.Comet
@@ -11,7 +12,7 @@ namespace ArashiDNS.Comet
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static int Timeout = 5000;
-        public static TldExtract TldExtractor = new("public_suffix_list.dat");
+        public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
         static void Main(string[] args)
         {
@@ -37,28 +38,7 @@ namespace ArashiDNS.Comet
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
-            var nsServerNames = await GetNameServerName(query);
-            if (nsServerNames.Count == 0)
-            {
-                e.Response = query.CreateResponseInstance();
-                e.Response.ReturnCode = ReturnCode.NxDomain;
-                return;
-            }
-            var nsServerIPs = await GetNameServerIp(nsServerNames);
-            if (nsServerIPs.Count == 0)
-            {
-                e.Response = query.CreateResponseInstance();
-                e.Response.ReturnCode = ReturnCode.NxDomain;
-                return;
-            }
-
-            var answer = await ResultResolve(nsServerIPs, query);
-            //if (answer == null || answer.AnswerRecords.Count == 0)
-            //{
-            //    nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
-            //    nsServerIPs = await GetNameServerIp(nsServerNames);
-            //    answer = await ResultResolve(nsServerIPs, query);
-            //}
+            var answer = await DoResolve(query);
 
             if (answer == null)
             {
@@ -75,16 +55,56 @@ namespace ArashiDNS.Comet
                 e.Response = response;
 
                 //answer.TransactionID = query.TransactionID;
-                //e.Response = answer;
             }
         }
 
-        private static async Task<List<DomainName>> GetNameServerName(DnsMessage query)
+        private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
         {
-            var name = query.Questions.First().Name;
-            //var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(name, RecordType.Ns);
+            var answer = query.CreateResponseInstance();
 
-            var tld = TldExtractor.Extract(name.ToString());
+            var nsServerNames = await GetNameServerName(query.Questions.First());
+            if (nsServerNames.Count == 0)
+            {
+                answer.ReturnCode = ReturnCode.NxDomain;
+                return answer;
+            }
+
+            var nsServerIPs = await GetNameServerIp(nsServerNames);
+            if (nsServerIPs.Count == 0)
+            {
+                answer.ReturnCode = ReturnCode.NxDomain;
+                return answer;
+            }
+
+            answer = await ResultResolve(nsServerIPs, query);
+
+            if (answer != null && answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= 20)
+            {
+                var copyQuery = query.DeepClone();
+                copyQuery.Questions.Clear();
+                copyQuery.Questions.Add(new DnsQuestion(
+                    ((CNameRecord) answer.AnswerRecords.First()).CanonicalName,
+                    query.Questions.First().RecordType,
+                    query.Questions.First().RecordClass));
+                var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
+                if (cnameAnswer is {AnswerRecords.Count: > 0})
+                    answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
+            }
+
+            //if (answer == null || answer.AnswerRecords.Count == 0)
+            //{
+            //    nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
+            //    nsServerIPs = await GetNameServerIp(nsServerNames);
+            //    answer = await ResultResolve(nsServerIPs, query);
+            //}
+
+            return answer;
+        }
+
+        private static async Task<List<DomainName>> GetNameServerName(DnsQuestion query)
+        {
+            var name = query.Name;
+            var tld = TldExtractor.Extract(name.ToString().Trim('.'));
             var rootName = name.LabelCount == 2
                 ? name
                 : string.IsNullOrWhiteSpace(tld.tld)
@@ -92,7 +112,6 @@ namespace ArashiDNS.Comet
                     : DomainName.Parse(tld.root + "." + tld.tld);
 
             //Console.WriteLine(tld);
-            //Console.WriteLine(rootName);
 
             var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(rootName, RecordType.Ns);
 
@@ -128,7 +147,8 @@ namespace ArashiDNS.Comet
         {
             try
             {
-                Console.WriteLine(string.Join(' ',nsAddresses));
+                //Console.WriteLine(string.Join(' ', nsAddresses));
+
                 var quest = query.Questions.First();
                 var client = new DnsClient(nsAddresses,
                     [new TcpClientTransport(), new UdpClientTransport()],
