@@ -139,7 +139,7 @@ namespace ArashiDNS.Comet
                     {
                         var answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType,
                             options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
-                        if (answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
+                        if (answer == null || answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
                             answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType) ?? answer;
                         if (answer != null)
                             return answer;
