@@ -11,7 +11,7 @@ namespace ArashiDNS.Comet
     {
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
-        public static int Timeout = 5000;
+        public static int Timeout = 1000;
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
         static void Main(string[] args)
@@ -78,12 +78,14 @@ namespace ArashiDNS.Comet
 
             answer = await ResultResolve(nsServerIPs, query);
 
-            if (answer != null && answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= 20)
+            if (answer != null && answer.AnswerRecords.Count != 0 &&
+                answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= 20)
             {
                 var copyQuery = query.DeepClone();
                 copyQuery.Questions.Clear();
                 copyQuery.Questions.Add(new DnsQuestion(
-                    ((CNameRecord) answer.AnswerRecords.First()).CanonicalName,
+                    ((CNameRecord) answer.AnswerRecords.LastOrDefault(x => x.RecordType == RecordType.CName)!)
+                    .CanonicalName,
                     query.Questions.First().RecordType,
                     query.Questions.First().RecordClass));
                 var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
@@ -156,7 +158,7 @@ namespace ArashiDNS.Comet
 
                 var answer = await client.ResolveAsync(quest.Name, quest.RecordType,
                     options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
-                
+
                 if (answer is {AnswerRecords.Count: 0} &&
                     answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns))
                 {
