@@ -1,7 +1,8 @@
-﻿using ARSoft.Tools.Net.Dns;
-using System.Net;
-using ARSoft.Tools.Net;
+﻿using ARSoft.Tools.Net;
+using ARSoft.Tools.Net.Dns;
 using NStack;
+using System.Net;
+using IPAddress = System.Net.IPAddress;
 
 namespace ArashiDNS.Comet
 {
@@ -10,7 +11,7 @@ namespace ArashiDNS.Comet
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static int Timeout = 5000;
-        public static TldExtract TldExtractor = new();
+        public static TldExtract TldExtractor = new("public_suffix_list.dat");
 
         static void Main(string[] args)
         {
@@ -52,12 +53,12 @@ namespace ArashiDNS.Comet
             }
 
             var answer = await ResultResolve(nsServerIPs, query);
-            if (answer == null || answer.AnswerRecords.Count == 0)
-            {
-                nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
-                nsServerIPs = await GetNameServerIp(nsServerNames);
-                answer = await ResultResolve(nsServerIPs, query);
-            }
+            //if (answer == null || answer.AnswerRecords.Count == 0)
+            //{
+            //    nsServerNames = await GetNameServerName(query.Questions.First().Name, nsServerIPs.First());
+            //    nsServerIPs = await GetNameServerIp(nsServerNames);
+            //    answer = await ResultResolve(nsServerIPs, query);
+            //}
 
             if (answer == null)
             {
@@ -110,47 +111,44 @@ namespace ArashiDNS.Comet
 
         private static async Task<List<IPAddress>> GetNameServerIp(List<DomainName> nsServerNames)
         {
-            foreach (var item in nsServerNames)
-            {
-                try
-                {
-                    var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item))?.AnswerRecords ?? [];
-                    if (nsARecords.Any(x => x.RecordType == RecordType.A))
-                        return nsARecords.Where(x => x.RecordType == RecordType.A)
-                            .Select(x => ((ARecord)x).Address).ToList();
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e);
-                }
-            }
+            var nsIps = new List<IPAddress>();
 
-            return null;
+            await Parallel.ForEachAsync(nsServerNames, async (item, c) =>
+            {
+                var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ?? [];
+                if (nsARecords.Any(x => x.RecordType == RecordType.A))
+                    nsIps.AddRange(nsARecords.Where(x => x.RecordType == RecordType.A)
+                        .Select(x => ((ARecord) x).Address));
+            });
+
+            return nsIps;
         }
 
         private static async Task<DnsMessage?> ResultResolve(List<IPAddress> nsAddresses, DnsMessage query)
         {
             try
             {
+                Console.WriteLine(string.Join(' ',nsAddresses));
                 var quest = query.Questions.First();
+                var client = new DnsClient(nsAddresses,
+                    [new TcpClientTransport(), new UdpClientTransport()],
+                    queryTimeout: Timeout);
 
-                foreach (var address in nsAddresses)
+                var answer = await client.ResolveAsync(quest.Name, quest.RecordType,
+                    options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
+                
+                if (answer is {AnswerRecords.Count: 0} &&
+                    answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns))
                 {
-                    try
-                    {
-                        var answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType,
-                            options: new DnsQueryOptions { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
-                        if (answer == null || answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
-                            answer = await new DnsClient(address, Timeout).ResolveAsync(quest.Name, quest.RecordType) ?? answer;
-                        if (answer != null)
-                            return answer;
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine(e);
-                    }
+                    return await ResultResolve(
+                        await GetNameServerIp(answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns)
+                            .Select(x => ((NsRecord) x).NameServer).ToList()),
+                        query);
                 }
-                return null;
+                if (answer == null || answer.ReturnCode == ReturnCode.Refused || answer.AnswerRecords.Count == 0)
+                    answer = await client.ResolveAsync(quest.Name, quest.RecordType) ?? answer;
+
+                return answer;
             }
             catch (Exception e)
             {
