@@ -115,8 +115,9 @@ namespace ArashiDNS.Comet
                 try
                 {
                     var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item))?.AnswerRecords ?? [];
-                    return nsARecords.Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address).ToList();
+                    if (nsARecords.Any(x => x.RecordType == RecordType.A))
+                        return nsARecords.Where(x => x.RecordType == RecordType.A)
+                            .Select(x => ((ARecord)x).Address).ToList();
                 }
                 catch (Exception e)
                 {
