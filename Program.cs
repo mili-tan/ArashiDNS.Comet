@@ -321,19 +321,28 @@ namespace ArashiDNS.Comet
 
                 var answer = await client.ResolveAsync(quest.Name, quest.RecordType,
                     options: new DnsQueryOptions
-                    { EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled });
+                        {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
 
-                if (answer is { AnswerRecords.Count: 0 } &&
+                if (answer is {AnswerRecords.Count: 0} &&
                     answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns))
                 {
                     var nsCacheMsg = query.CreateResponseInstance();
-                    nsCacheMsg.AnswerRecords.AddRange(answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns));
+                    var ttl = DateTime.UtcNow.AddSeconds(Math.Min(answer.AuthorityRecords.Count > 0
+                        ? answer.AuthorityRecords.Min(r => r.TimeToLive)
+                        : 300, MinNsTTL));
+                    nsCacheMsg.AnswerRecords.AddRange(
+                        answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns));
                     NsQueryCache[GenerateNsCacheKey(quest.Name, RecordType.Ns)] = new CacheItem<DnsMessage>
                     {
                         Value = nsCacheMsg,
-                        ExpiryTime = DateTime.UtcNow.AddSeconds(Math.Min(answer.AuthorityRecords.Count > 0
-                            ? answer.AuthorityRecords.Min(r => r.TimeToLive)
-                            : 300, MinNsTTL))
+                        ExpiryTime = ttl
+                    };
+                    NsQueryCache[
+                        GenerateNsCacheKey(answer.AuthorityRecords.First(x => x.RecordType == RecordType.Ns).Name,
+                            RecordType.Ns)] = new CacheItem<DnsMessage>
+                    {
+                        Value = nsCacheMsg,
+                        ExpiryTime = ttl
                     };
 
                     return await ResultResolve(
