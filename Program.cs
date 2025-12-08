@@ -13,8 +13,10 @@ namespace ArashiDNS.Comet
         public static IPAddress Server = IPAddress.Parse("223.5.5.5");
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static int Timeout = 1000;
+        public static int MaxCnameDepth = 30;
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
+        public static bool UseResponseCache = false;
         public static Timer CacheCleanupTimer;
         public class CacheItem<T>
         {
@@ -78,12 +80,12 @@ namespace ArashiDNS.Comet
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
             var cacheKey = GenerateCacheKey(query.Questions.First());
-            if (DnsResponseCache.TryGetValue(cacheKey, out var cacheItem) && !cacheItem.IsExpired)
+            if (UseResponseCache && DnsResponseCache.TryGetValue(cacheKey, out var cacheItem) && !cacheItem.IsExpired)
             {
                 var cachedResponse = cacheItem.Value.DeepClone();
                 cachedResponse.TransactionID = query.TransactionID;
                 e.Response = cachedResponse;
-                Console.WriteLine($"Cache hit for: {query.Questions.First().Name}");
+                Task.Run(() => Console.WriteLine($"Cache hit for: {query.Questions.First().Name}"));
                 return;
             }
 
@@ -103,7 +105,7 @@ namespace ArashiDNS.Comet
                 response.AnswerRecords.AddRange(answer.AnswerRecords);
                 e.Response = response;
 
-                if (answer.ReturnCode is ReturnCode.NoError or ReturnCode.NxDomain)
+                if (UseResponseCache && answer.ReturnCode is ReturnCode.NoError or ReturnCode.NxDomain)
                     CacheDnsResponse(cacheKey, response);
             }
         }
@@ -127,7 +129,7 @@ namespace ArashiDNS.Comet
                 Value = response.DeepClone(),
                 ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
             };
-            Console.WriteLine($"Cached response for: {key} (TTL: {ttl}s)");
+            Task.Run(() => Console.WriteLine($"Cached response for: {key} (TTL: {ttl}s)"));
         }
 
         private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
@@ -151,7 +153,7 @@ namespace ArashiDNS.Comet
             answer = await ResultResolve(nsServerIPs, query);
 
             if (answer != null && answer.AnswerRecords.Count != 0 &&
-                answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= 20)
+                answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= MaxCnameDepth)
             {
                 var copyQuery = query.DeepClone();
                 copyQuery.Questions.Clear();
@@ -181,7 +183,7 @@ namespace ArashiDNS.Comet
             var nsCacheKey = GenerateNsCacheKey(rootName, RecordType.Ns);
             if (NsQueryCache.TryGetValue(nsCacheKey, out var nsCacheItem) && !nsCacheItem.IsExpired)
             {
-                Console.WriteLine($"NS cache hit for: {rootName}");
+                Task.Run(() => Console.WriteLine($"NS cache hit for: {rootName}"));
                 return nsCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
                     .Select(x => ((NsRecord)x).NameServer)
@@ -203,7 +205,7 @@ namespace ArashiDNS.Comet
                     Value = nsResolve.DeepClone(),
                     ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
                 };
-                Console.WriteLine($"Cached NS records for: {rootName} (TTL: {ttl}s)");
+                Task.Run(() => Console.WriteLine($"Cached NS records for: {rootName} (TTL: {ttl}s)"));
             }
 
             return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
@@ -248,7 +250,7 @@ namespace ArashiDNS.Comet
         {
             var nsIps = new List<IPAddress>();
 
-            await Parallel.ForEachAsync(nsServerNames, async (item, c) =>
+            await Parallel.ForEachAsync(nsServerNames.Order().Take(2), async (item, c) =>
             {
                 var aCacheKey = GenerateNsCacheKey(item, RecordType.A);
                 if (NsQueryCache.TryGetValue(aCacheKey, out var aCacheItem) && !aCacheItem.IsExpired)
@@ -259,7 +261,7 @@ namespace ArashiDNS.Comet
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
-                    Console.WriteLine($"A record cache hit for: {item}");
+                    //Console.WriteLine($"A record cache hit for: {item}");
                     return;
                 }
 
@@ -283,7 +285,7 @@ namespace ArashiDNS.Comet
                             Value = response,
                             ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
                         };
-                        Console.WriteLine($"Cached A records for: {item} (TTL: {ttl}s)");
+                        Task.Run(() => Console.WriteLine($"Cached A records for: {item} (TTL: {ttl}s)"));
                     }
                 }
             });
