@@ -21,6 +21,7 @@ namespace ArashiDNS.Comet
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
         public static bool UseResponseCache = false;
+        public static bool UseCnameFldingCache = true;
         public static Timer CacheCleanupTimer;
         public class CacheItem<T>
         {
@@ -139,6 +140,28 @@ namespace ArashiDNS.Comet
         private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
         {
             var answer = query.CreateResponseInstance();
+            var cnameCacheKey = $"{query.Questions.First().Name}:CNAME:{query.Questions.First().RecordClass}";
+
+            if (UseCnameFldingCache && DnsResponseCache.TryGetValue(cnameCacheKey, out var nsRootCacheItem) && !nsRootCacheItem.IsExpired)
+            {
+                var cNameRecord = (nsRootCacheItem.Value.AnswerRecords
+                    .Last(x => x.RecordType == RecordType.CName) as CNameRecord);
+                Task.Run(() => Console.WriteLine($"CNAME cache hit for: {cNameRecord.CanonicalName}"));
+                answer.AnswerRecords.Add(new CNameRecord(query.Questions.First().Name, cNameRecord.TimeToLive,
+                    cNameRecord.CanonicalName));
+                var copyQuery = query.DeepClone();
+                copyQuery.Questions.Clear();
+                copyQuery.Questions.Add(new DnsQuestion(cNameRecord.CanonicalName,
+                    query.Questions.First().RecordType,
+                    query.Questions.First().RecordClass));
+                var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
+                //Console.WriteLine(cnameAnswer.ReturnCode);
+                if (cnameAnswer is {AnswerRecords.Count: > 0})
+                {
+                    answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
+                    return answer;
+                }
+            }
 
             var nsServerNames = await GetNameServerName(query.Questions.First());
             if (nsServerNames.Count == 0)
@@ -171,16 +194,17 @@ namespace ArashiDNS.Comet
                 if (cnameAnswer is {AnswerRecords.Count: > 0})
                 {
                     answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
-                    if (cnameAnswer.AnswerRecords.Any(x => x.RecordType == RecordType.CName))
+                    if (UseCnameFldingCache && cnameAnswer.AnswerRecords.Any(x => x.RecordType == RecordType.CName))
                     {
-                        DnsResponseCache[
-                                $"{copyQuery.Questions.First().Name}:CNAME:{copyQuery.Questions.First().RecordClass}"] =
+                        var cnameRecord = cnameAnswer.AnswerRecords
+                            .Last(x => x.RecordType == RecordType.CName);
+                        DnsResponseCache[cnameCacheKey] =
                             new CacheItem<DnsMessage>
                             {
                                 Value = cnameAnswer,
-                                ExpiryTime = DateTime.UtcNow.AddSeconds(cnameAnswer.AnswerRecords
-                                    .Last(x => x.RecordType == RecordType.CName).TimeToLive)
+                                ExpiryTime = DateTime.UtcNow.AddSeconds(cnameRecord.TimeToLive)
                             };
+                        Task.Run(() => Console.WriteLine($"Cached CNAME records for: {cnameRecord.Name} (TTL: {cnameRecord.TimeToLive}s)"));
                     }
                 }
             }
@@ -358,6 +382,7 @@ namespace ArashiDNS.Comet
                         : 300, MinNsTTL));
                     nsCacheMsg.AnswerRecords.AddRange(
                         answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns));
+                    
                     NsQueryCache[GenerateNsCacheKey(quest.Name, RecordType.Ns)] = new CacheItem<DnsMessage>
                     {
                         Value = nsCacheMsg,
