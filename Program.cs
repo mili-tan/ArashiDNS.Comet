@@ -1,6 +1,7 @@
 ﻿using ARSoft.Tools.Net;
 using ARSoft.Tools.Net.Dns;
 using DeepCloner.Core;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using NStack;
 using System.Collections.Concurrent;
 using System.Net;
@@ -167,8 +168,21 @@ namespace ArashiDNS.Comet
                     query.Questions.First().RecordClass));
                 var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
                 //Console.WriteLine(cnameAnswer.ReturnCode);
-                if (cnameAnswer is { AnswerRecords.Count: > 0 })
+                if (cnameAnswer is {AnswerRecords.Count: > 0})
+                {
                     answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
+                    if (cnameAnswer.AnswerRecords.Any(x => x.RecordType == RecordType.CName))
+                    {
+                        DnsResponseCache[
+                                $"{copyQuery.Questions.First().Name}:CNAME:{copyQuery.Questions.First().RecordClass}"] =
+                            new CacheItem<DnsMessage>
+                            {
+                                Value = cnameAnswer,
+                                ExpiryTime = DateTime.UtcNow.AddSeconds(cnameAnswer.AnswerRecords
+                                    .Last(x => x.RecordType == RecordType.CName).TimeToLive)
+                            };
+                    }
+                }
             }
 
             return answer;
@@ -193,6 +207,18 @@ namespace ArashiDNS.Comet
                 : string.IsNullOrWhiteSpace(tld.tld)
                     ? DomainName.Parse(string.Join('.', name.Labels.TakeLast(2)))
                     : DomainName.Parse(tld.root + "." + tld.tld);
+
+            if (!name.GetParentName().Equals(rootName) &&
+                NsQueryCache.TryGetValue(GenerateNsCacheKey(name.GetParentName(), RecordType.Ns),
+                    out var nsParentCacheItem) &&
+                !nsParentCacheItem.IsExpired)
+            {
+                Task.Run(() => Console.WriteLine($"NS cache hit for: {name.GetParentName()}"));
+                return nsParentCacheItem.Value.AnswerRecords
+                    .Where(x => x.RecordType == RecordType.Ns)
+                    .Select(x => ((NsRecord) x).NameServer)
+                    .ToList();
+            }
 
             var nsRootCacheKey = GenerateNsCacheKey(rootName, RecordType.Ns);
             if (NsQueryCache.TryGetValue(nsRootCacheKey, out var nsRootCacheItem) && !nsRootCacheItem.IsExpired)
