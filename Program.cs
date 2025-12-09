@@ -21,7 +21,7 @@ namespace ArashiDNS.Comet
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
         public static bool UseResponseCache = false;
-        public static bool UseCnameFldingCache = true;
+        public static bool UseCnameFoldingCache = true;
         public static Timer CacheCleanupTimer;
         public class CacheItem<T>
         {
@@ -140,9 +140,10 @@ namespace ArashiDNS.Comet
         private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
         {
             var answer = query.CreateResponseInstance();
-            var cnameCacheKey = $"{query.Questions.First().Name}:CNAME:{query.Questions.First().RecordClass}";
+            var cnameFoldCacheKey = $"{query.Questions.First().Name}:CNAME-FOLD:{query.Questions.First().RecordClass}";
 
-            if (UseCnameFldingCache && DnsResponseCache.TryGetValue(cnameCacheKey, out var nsRootCacheItem) && !nsRootCacheItem.IsExpired)
+            if (UseCnameFoldingCache && DnsResponseCache.TryGetValue(cnameFoldCacheKey, out var nsRootCacheItem) &&
+                !nsRootCacheItem.IsExpired)
             {
                 var cNameRecord = (nsRootCacheItem.Value.AnswerRecords
                     .Last(x => x.RecordType == RecordType.CName) as CNameRecord);
@@ -194,11 +195,11 @@ namespace ArashiDNS.Comet
                 if (cnameAnswer is {AnswerRecords.Count: > 0})
                 {
                     answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
-                    if (UseCnameFldingCache && cnameAnswer.AnswerRecords.Any(x => x.RecordType == RecordType.CName))
+                    if (UseCnameFoldingCache && cnameAnswer.AnswerRecords.Any(x => x.RecordType == RecordType.CName))
                     {
                         var cnameRecord = cnameAnswer.AnswerRecords
                             .Last(x => x.RecordType == RecordType.CName);
-                        DnsResponseCache[cnameCacheKey] =
+                        DnsResponseCache[cnameFoldCacheKey] =
                             new CacheItem<DnsMessage>
                             {
                                 Value = cnameAnswer,
