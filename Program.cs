@@ -1,11 +1,9 @@
 ﻿using ARSoft.Tools.Net;
 using ARSoft.Tools.Net.Dns;
 using DeepCloner.Core;
-using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using NStack;
 using System.Collections.Concurrent;
 using System.Net;
-using System.Xml.Linq;
 using IPAddress = System.Net.IPAddress;
 
 namespace ArashiDNS.Comet
@@ -16,7 +14,7 @@ namespace ArashiDNS.Comet
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static int Timeout = 1000;
         public static int MaxCnameDepth = 30;
-        public static int MinNsTTL = 86400;
+        public static int MinNsTTL = 3600;
         public static int MinTTL = 60;
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
@@ -199,13 +197,17 @@ namespace ArashiDNS.Comet
                     {
                         var cnameRecord = cnameAnswer.AnswerRecords
                             .Last(x => x.RecordType == RecordType.CName);
+                        var ttl = Math.Min(cnameAnswer.AnswerRecords.Count > 0
+                            ? cnameAnswer.AnswerRecords.Min(r => r.TimeToLive)
+                            : 60, MinTTL);
                         DnsResponseCache[cnameFoldCacheKey] =
                             new CacheItem<DnsMessage>
                             {
                                 Value = cnameAnswer,
-                                ExpiryTime = DateTime.UtcNow.AddSeconds(cnameRecord.TimeToLive)
+                                ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
                             };
-                        Task.Run(() => Console.WriteLine($"Cached CNAME records for: {cnameRecord.Name} (TTL: {cnameRecord.TimeToLive}s)"));
+                        Task.Run(() =>
+                            Console.WriteLine($"Cached CNAME records for: {cnameRecord.Name} (TTL: {ttl}s)"));
                     }
                 }
             }
