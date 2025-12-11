@@ -36,7 +36,7 @@ namespace ArashiDNS.Comet
 
         static void Main(string[] args)
         {
-            CleanupCacheTask();
+            InitCleanupCacheTask();
 
             var dnsServer = new DnsServer(new UdpServerTransport(ListenerEndPoint),
                 new TcpServerTransport(ListenerEndPoint));
@@ -56,7 +56,7 @@ namespace ArashiDNS.Comet
             while (true) wait.WaitOne();
         }
 
-        private static void CleanupCacheTask()
+        private static void InitCleanupCacheTask()
         {
             CacheCleanupTimer = new Timer(_ =>
             {
@@ -85,13 +85,14 @@ namespace ArashiDNS.Comet
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
-            var cacheKey = GenerateCacheKey(query.Questions.First());
+            var quest = query.Questions.First();
+            var cacheKey = GenerateCacheKey(quest);
             if (UseResponseCache && DnsResponseCache.TryGetValue(cacheKey, out var cacheItem) && !cacheItem.IsExpired)
             {
                 var cachedResponse = cacheItem.Value.DeepClone();
                 cachedResponse.TransactionID = query.TransactionID;
                 e.Response = cachedResponse;
-                if (UseLog) Task.Run(() => Console.WriteLine($"Cache hit for: {query.Questions.First().Name}"));
+                if (UseLog) Task.Run(() => Console.WriteLine($"Cache hit for: {quest.Name}"));
                 return;
             }
 
@@ -138,10 +139,19 @@ namespace ArashiDNS.Comet
             if (UseLog) Task.Run(() => Console.WriteLine($"Cached response for: {key} (TTL: {ttl}s)"));
         }
 
+        public static DnsMessage CopyQuery(DnsMessage qMessage, DnsQuestion question)
+        {
+            var newQuery = qMessage.DeepClone();
+            newQuery.Questions.Clear();
+            newQuery.Questions.Add(question);
+            return newQuery;
+        }
+
         private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
         {
             var answer = query.CreateResponseInstance();
-            var cnameFoldCacheKey = $"{query.Questions.First().Name}:CNAME-FOLD:{query.Questions.First().RecordClass}";
+            var quest = query.Questions.First();
+            var cnameFoldCacheKey = $"{quest.Name}:CNAME-FOLD:{quest.RecordClass}";
 
             if (UseCnameFoldingCache && DnsResponseCache.TryGetValue(cnameFoldCacheKey, out var nsRootCacheItem) &&
                 !nsRootCacheItem.IsExpired)
@@ -149,14 +159,11 @@ namespace ArashiDNS.Comet
                 var cNameRecord = (nsRootCacheItem.Value.AnswerRecords
                     .Last(x => x.RecordType == RecordType.CName) as CNameRecord);
                 if (UseLog) Task.Run(() => Console.WriteLine($"CNAME cache hit for: {cNameRecord.CanonicalName}"));
-                answer.AnswerRecords.Add(new CNameRecord(query.Questions.First().Name, cNameRecord.TimeToLive,
+                answer.AnswerRecords.Add(new CNameRecord(quest.Name, cNameRecord.TimeToLive,
                     cNameRecord.CanonicalName));
-                var copyQuery = query.DeepClone();
-                copyQuery.Questions.Clear();
-                copyQuery.Questions.Add(new DnsQuestion(cNameRecord.CanonicalName,
-                    query.Questions.First().RecordType,
-                    query.Questions.First().RecordClass));
-                var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
+                var cnameAnswer = await DoResolve(CopyQuery(query, new DnsQuestion(cNameRecord.CanonicalName,
+                    quest.RecordType,
+                    quest.RecordClass)), cnameDepth + 1);
                 //Console.WriteLine(cnameAnswer.ReturnCode);
                 if (cnameAnswer is {AnswerRecords.Count: > 0})
                 {
@@ -165,7 +172,7 @@ namespace ArashiDNS.Comet
                 }
             }
 
-            var nsServerNames = await GetNameServerName(query.Questions.First());
+            var nsServerNames = await GetNameServerName(quest);
             if (nsServerNames.Count == 0)
             {
                 answer.ReturnCode = ReturnCode.NxDomain;
@@ -184,15 +191,13 @@ namespace ArashiDNS.Comet
             if (answer != null && answer.AnswerRecords.Count != 0 &&
                 answer.AnswerRecords.All(x => x.RecordType == RecordType.CName) && cnameDepth <= MaxCnameDepth)
             {
-                var copyQuery = query.DeepClone();
-                copyQuery.Questions.Clear();
-                copyQuery.Questions.Add(new DnsQuestion(
+                var cnameAnswer = await DoResolve(CopyQuery(query, new DnsQuestion(
                     ((CNameRecord) answer.AnswerRecords.LastOrDefault(x => x.RecordType == RecordType.CName)!)
                     .CanonicalName,
-                    query.Questions.First().RecordType,
-                    query.Questions.First().RecordClass));
-                var cnameAnswer = await DoResolve(copyQuery, cnameDepth + 1);
+                    quest.RecordType,
+                    quest.RecordClass)), cnameDepth + 1);
                 //Console.WriteLine(cnameAnswer.ReturnCode);
+
                 if (cnameAnswer is {AnswerRecords.Count: > 0})
                 {
                     answer.AnswerRecords.AddRange(cnameAnswer.AnswerRecords);
