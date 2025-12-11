@@ -73,6 +73,8 @@ namespace ArashiDNS.Comet
                     if (expiredDnsKeys.Any() || expiredNsKeys.Any())
                         Console.WriteLine($"Cache cleanup: {expiredDnsKeys.Count} DNS entries, " +
                                           $"{expiredNsKeys.Count} NS entries removed.");
+
+                    GC.Collect();
                 }
                 catch (Exception ex)
                 {
