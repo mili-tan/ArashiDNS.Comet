@@ -10,7 +10,7 @@ namespace ArashiDNS.Comet
 {
     internal class Program
     {
-        public static IPAddress Server = IPAddress.Parse("223.5.5.5");
+        public static IPAddress[] Servers = [IPAddress.Parse("223.5.5.5")];
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
@@ -265,10 +265,10 @@ namespace ArashiDNS.Comet
                     .ToList();
             }
 
-            var nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(rootName, RecordType.Ns);
+            var nsResolve = await new DnsClient(Servers, Timeout).ResolveAsync(rootName, RecordType.Ns);
 
             if (nsResolve is {AnswerRecords.Count: 0})
-                nsResolve = await new DnsClient(Server, Timeout).ResolveAsync(rootName.GetParentName(), RecordType.Ns);
+                nsResolve = await new DnsClient(Servers, Timeout).ResolveAsync(rootName.GetParentName(), RecordType.Ns);
 
             if (nsResolve != null)
             {
@@ -343,7 +343,7 @@ namespace ArashiDNS.Comet
                     return;
                 }
 
-                var nsARecords = (await new DnsClient(Server, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ?? [];
+                var nsARecords = (await new DnsClient(Servers, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ?? [];
                 if (nsARecords.Any(x => x.RecordType == RecordType.A))
                 {
                     var addresses = nsARecords.Where(x => x.RecordType == RecordType.A)
