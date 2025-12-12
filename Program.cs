@@ -19,6 +19,7 @@ namespace ArashiDNS.Comet
         public static int MinNsTTL = 3600;
         public static int MinTTL = 60;
 
+        public static bool UseV6Ns = false;
         public static bool UseLog = true;
         public static bool UseResponseCache = false;
         public static bool UseCnameFoldingCache = true;
@@ -338,18 +339,20 @@ namespace ArashiDNS.Comet
                 {
                     var cachedIps = aCacheItem.Value.AnswerRecords
                         .Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
                     if (UseLog) Task.Run(() => Console.WriteLine($"A record cache hit for: {item}"));
                     return;
                 }
-                if (NsQueryCache.TryGetValue(aaaaCacheKey, out var aaaaCacheItem) && !aaaaCacheItem.IsExpired)
+
+                if (UseV6Ns && NsQueryCache.TryGetValue(aaaaCacheKey, out var aaaaCacheItem) &&
+                    !aaaaCacheItem.IsExpired)
                 {
                     var cachedIps = aaaaCacheItem.Value.AnswerRecords
                         .Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
@@ -357,11 +360,12 @@ namespace ArashiDNS.Comet
                     return;
                 }
 
-                var nsARecords = (await new DnsClient(Servers, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ?? [];
+                var nsARecords = (await new DnsClient(Servers, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ??
+                                 [];
                 if (nsARecords.Any(x => x.RecordType == RecordType.A))
                 {
                     var addresses = nsARecords.Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(addresses);
@@ -380,7 +384,7 @@ namespace ArashiDNS.Comet
                         if (UseLog) Task.Run(() => Console.WriteLine($"Cached A records for: {item} (TTL: {ttl}s)"));
                     }
                 }
-                else
+                else if (UseV6Ns)
                 {
                     var nsAaaaRecords =
                         (await new DnsClient(Servers, Timeout).ResolveAsync(item, RecordType.Aaaa, token: c))
