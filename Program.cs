@@ -181,7 +181,7 @@ namespace ArashiDNS.Comet
                 return answer;
             }
 
-            var nsServerIPs = await GetNameServerIp(nsServerNames);
+            var nsServerIPs = await GetNameServerIp(nsServerNames.Order().Take(2).ToList());
             if (nsServerIPs.Count == 0)
             {
                 answer.ReturnCode = ReturnCode.NxDomain;
@@ -330,7 +330,7 @@ namespace ArashiDNS.Comet
         {
             var nsIps = new List<IPAddress>();
 
-            await Parallel.ForEachAsync(nsServerNames.Order().TakeLast(2), async (item, c) =>
+            await Parallel.ForEachAsync(nsServerNames, async (item, c) =>
             {
                 var aCacheKey = GenerateNsCacheKey(item, RecordType.A);
                 if (NsQueryCache.TryGetValue(aCacheKey, out var aCacheItem) && !aCacheItem.IsExpired)
