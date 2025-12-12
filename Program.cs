@@ -181,7 +181,7 @@ namespace ArashiDNS.Comet
                 return answer;
             }
 
-            var nsServerIPs = await GetNameServerIp(nsServerNames.Order().Take(2).ToList());
+            var nsServerIPs = await GetNameServerIp(nsServerNames.Order().Take(2));
             if (nsServerIPs.Count == 0)
             {
                 answer.ReturnCode = ReturnCode.NxDomain;
@@ -326,7 +326,7 @@ namespace ArashiDNS.Comet
                 .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
         }
 
-        private static async Task<List<IPAddress>> GetNameServerIp(List<DomainName> nsServerNames)
+        private static async Task<List<IPAddress>> GetNameServerIp(IEnumerable<DomainName> nsServerNames)
         {
             var nsIps = new List<IPAddress>();
 
@@ -414,7 +414,7 @@ namespace ArashiDNS.Comet
             return nsIps.Distinct().ToList();
         }
 
-        private static async Task<DnsMessage?> ResultResolve(List<IPAddress> nsAddresses, DnsMessage query)
+        private static async Task<DnsMessage?> ResultResolve(IEnumerable<IPAddress> nsAddresses, DnsMessage query)
         {
             try
             {
@@ -452,7 +452,7 @@ namespace ArashiDNS.Comet
 
                     return await ResultResolve(
                         await GetNameServerIp(answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns)
-                            .Select(x => ((NsRecord) x).NameServer).ToList()),
+                            .Select(x => ((NsRecord) x).NameServer).Order().Take(2)),
                         query);
                 }
 
