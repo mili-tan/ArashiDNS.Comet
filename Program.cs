@@ -333,6 +333,7 @@ namespace ArashiDNS.Comet
             await Parallel.ForEachAsync(nsServerNames, async (item, c) =>
             {
                 var aCacheKey = GenerateNsCacheKey(item, RecordType.A);
+                var aaaaCacheKey = GenerateNsCacheKey(item, RecordType.Aaaa);
                 if (NsQueryCache.TryGetValue(aCacheKey, out var aCacheItem) && !aCacheItem.IsExpired)
                 {
                     var cachedIps = aCacheItem.Value.AnswerRecords
@@ -342,6 +343,17 @@ namespace ArashiDNS.Comet
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
                     if (UseLog) Task.Run(() => Console.WriteLine($"A record cache hit for: {item}"));
+                    return;
+                }
+                if (NsQueryCache.TryGetValue(aaaaCacheKey, out var aaaaCacheItem) && !aaaaCacheItem.IsExpired)
+                {
+                    var cachedIps = aaaaCacheItem.Value.AnswerRecords
+                        .Where(x => x.RecordType == RecordType.A)
+                        .Select(x => ((ARecord)x).Address)
+                        .ToList();
+
+                    lock (nsIps) nsIps.AddRange(cachedIps);
+                    if (UseLog) Task.Run(() => Console.WriteLine($"AAAA record cache hit for: {item}"));
                     return;
                 }
 
@@ -366,6 +378,35 @@ namespace ArashiDNS.Comet
                             ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
                         };
                         if (UseLog) Task.Run(() => Console.WriteLine($"Cached A records for: {item} (TTL: {ttl}s)"));
+                    }
+                }
+                else
+                {
+                    var nsAaaaRecords =
+                        (await new DnsClient(Servers, Timeout).ResolveAsync(item, RecordType.Aaaa, token: c))
+                        ?.AnswerRecords ?? [];
+                    if (nsAaaaRecords.Any(x => x.RecordType == RecordType.A))
+                    {
+                        var addresses = nsAaaaRecords.Where(x => x.RecordType == RecordType.Aaaa)
+                            .Select(x => ((AaaaRecord) x).Address)
+                            .ToList();
+
+                        lock (nsIps) nsIps.AddRange(addresses);
+
+                        if (nsAaaaRecords.Any())
+                        {
+                            var response = new DnsMessage();
+                            response.AnswerRecords.AddRange(nsAaaaRecords);
+                            var ttl = Math.Max(nsAaaaRecords.Min(r => r.TimeToLive), MinTTL);
+
+                            NsQueryCache[aaaaCacheKey] = new CacheItem<DnsMessage>
+                            {
+                                Value = response,
+                                ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
+                            };
+                            if (UseLog)
+                                Task.Run(() => Console.WriteLine($"Cached AAAA records for: {item} (TTL: {ttl}s)"));
+                        }
                     }
                 }
             });
