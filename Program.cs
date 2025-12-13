@@ -10,7 +10,11 @@ namespace ArashiDNS.Comet
 {
     internal class Program
     {
-        public static IPAddress[] Servers = [IPAddress.Parse("223.5.5.5")];
+        public static IPAddress[] Servers =
+        [
+            IPAddress.Parse("223.5.5.5"), IPAddress.Parse("119.29.29.29"), IPAddress.Parse("223.6.6.6"),
+            IPAddress.Parse("119.28.28.28")
+        ];
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
@@ -270,10 +274,10 @@ namespace ArashiDNS.Comet
                     .ToList();
             }
 
-            var nsResolve = await new DnsClient(Servers, Timeout).ResolveAsync(rootName, RecordType.Ns);
+            var nsResolve = await ResolveAsync(Servers, rootName, RecordType.Ns, isUdpFirst: true);
 
             if (nsResolve is {AnswerRecords.Count: 0})
-                nsResolve = await new DnsClient(Servers, Timeout).ResolveAsync(rootName.GetParentName(), RecordType.Ns);
+                nsResolve = await ResolveAsync(Servers, rootName.GetParentName(), RecordType.Ns, isUdpFirst: true);
 
             if (nsResolve != null)
             {
@@ -362,7 +366,7 @@ namespace ArashiDNS.Comet
                     return;
                 }
 
-                var nsARecords = (await new DnsClient(Servers, Timeout).ResolveAsync(item, token: c))?.AnswerRecords ??
+                var nsARecords = (await ResolveAsync(Servers, item, RecordType.A, isUdpFirst: true))?.AnswerRecords ??
                                  [];
                 if (nsARecords.Any(x => x.RecordType == RecordType.A))
                 {
@@ -389,7 +393,7 @@ namespace ArashiDNS.Comet
                 else if (UseV6Ns)
                 {
                     var nsAaaaRecords =
-                        (await new DnsClient(Servers, Timeout).ResolveAsync(item, RecordType.Aaaa, token: c))
+                        (await ResolveAsync(Servers, item, RecordType.Aaaa, isUdpFirst: true))
                         ?.AnswerRecords ?? [];
                     if (nsAaaaRecords.Any(x => x.RecordType == RecordType.A))
                     {
@@ -475,7 +479,7 @@ namespace ArashiDNS.Comet
 
         public static async Task<DnsMessage?> ResolveAsync(IEnumerable<IPAddress> ipAddresses, DomainName name,
             RecordType type, RecordClass recordClass = RecordClass.INet,
-            DnsQueryOptions? options = null, bool isParallel = true)
+            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = true)
         {
             try
             {
@@ -492,7 +496,9 @@ namespace ArashiDNS.Comet
                                 try
                                 {
                                     return await new DnsClient([server],
-                                        [new TcpClientTransport(), new UdpClientTransport()],
+                                        isUdpFirst
+                                            ? [new UdpClientTransport(), new TcpClientTransport()]
+                                            : [new TcpClientTransport(), new UdpClientTransport()],
                                         queryTimeout: Timeout).ResolveAsync(name, type,
                                         recordClass, options, cts.Token);
                                 }
