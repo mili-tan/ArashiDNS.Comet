@@ -4,7 +4,6 @@ using DeepCloner.Core;
 using NStack;
 using System.Collections.Concurrent;
 using System.Net;
-using System.Threading;
 using IPAddress = System.Net.IPAddress;
 
 namespace ArashiDNS.Comet
@@ -484,7 +483,7 @@ namespace ArashiDNS.Comet
                 if (isParallel)
                 {
                     // var items = ipAddresses.Take(6);
-                    foreach (var items in ipAddresses.Chunk(6))
+                    foreach (var items in ipAddresses.Chunk(4))
                     {
                         var cts = new CancellationTokenSource(Timeout);
                         var tasks = items.Select(server =>
