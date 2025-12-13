@@ -4,6 +4,7 @@ using DeepCloner.Core;
 using NStack;
 using System.Collections.Concurrent;
 using System.Net;
+using System.Threading;
 using IPAddress = System.Net.IPAddress;
 
 namespace ArashiDNS.Comet
@@ -25,6 +26,7 @@ namespace ArashiDNS.Comet
         public static bool UseCnameFoldingCache = true;
 
         public static Timer CacheCleanupTimer;
+
         public class CacheItem<T>
         {
             public T Value { get; set; }
@@ -123,7 +125,7 @@ namespace ArashiDNS.Comet
         private static string GenerateCacheKey(DnsQuestion question) =>
             $"{question.Name}:{question.RecordType}:{question.RecordClass}";
 
-        private static string GenerateNsCacheKey(DomainName domain, RecordType recordType) => 
+        private static string GenerateNsCacheKey(DomainName domain, RecordType recordType) =>
             $"{domain}:{recordType}";
 
         private static void CacheDnsResponse(string key, DnsMessage response)
@@ -217,8 +219,9 @@ namespace ArashiDNS.Comet
                                 Value = cnameAnswer,
                                 ExpiryTime = DateTime.UtcNow.AddSeconds(ttl)
                             };
-                        if (UseLog) Task.Run(() =>
-                            Console.WriteLine($"Cached CNAME records for: {cnameRecord.Name} (TTL: {ttl}s)"));
+                        if (UseLog)
+                            Task.Run(() =>
+                                Console.WriteLine($"Cached CNAME records for: {cnameRecord.Name} (TTL: {ttl}s)"));
                     }
                 }
             }
@@ -264,7 +267,7 @@ namespace ArashiDNS.Comet
                 if (UseLog) Task.Run(() => Console.WriteLine($"NS cache hit for: {rootName}"));
                 return nsRootCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
-                    .Select(x => ((NsRecord)x).NameServer)
+                    .Select(x => ((NsRecord) x).NameServer)
                     .ToList();
             }
 
@@ -290,7 +293,7 @@ namespace ArashiDNS.Comet
             }
 
             return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
-                .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
+                .Select(x => ((NsRecord) x).NameServer).ToList() ?? [];
         }
 
         private static async Task<List<DomainName>> GetNameServerName(DomainName name, IPAddress ipAddress)
@@ -301,7 +304,7 @@ namespace ArashiDNS.Comet
                 Console.WriteLine($"NS cache hit for: {name}");
                 return nsCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
-                    .Select(x => ((NsRecord)x).NameServer)
+                    .Select(x => ((NsRecord) x).NameServer)
                     .ToList();
             }
 
@@ -324,7 +327,7 @@ namespace ArashiDNS.Comet
             }
 
             return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
-                .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
+                .Select(x => ((NsRecord) x).NameServer).ToList() ?? [];
         }
 
         private static async Task<List<IPAddress>> GetNameServerIp(IEnumerable<DomainName> nsServerNames)
@@ -423,11 +426,8 @@ namespace ArashiDNS.Comet
             try
             {
                 var quest = query.Questions.First();
-                var client = new DnsClient(nsAddresses,
-                    [new TcpClientTransport(), new UdpClientTransport()],
-                    queryTimeout: Timeout);
 
-                var answer = await client.ResolveAsync(quest.Name, quest.RecordType,
+                var answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
                     options: new DnsQueryOptions
                         {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
 
@@ -440,7 +440,7 @@ namespace ArashiDNS.Comet
                         : 300, MinNsTTL));
                     nsCacheMsg.AnswerRecords.AddRange(
                         answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns));
-                    
+
                     NsQueryCache[GenerateNsCacheKey(quest.Name, RecordType.Ns)] = new CacheItem<DnsMessage>
                     {
                         Value = nsCacheMsg,
@@ -462,7 +462,8 @@ namespace ArashiDNS.Comet
 
                 if (answer == null ||
                     (answer.ReturnCode != ReturnCode.NoError && answer.ReturnCode != ReturnCode.NxDomain))
-                    answer = await client.ResolveAsync(quest.Name, quest.RecordType) ?? answer;
+                    answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
+                        options: new DnsQueryOptions()) ?? answer;
 
                 return answer;
             }
@@ -470,6 +471,53 @@ namespace ArashiDNS.Comet
             {
                 Console.WriteLine(e);
                 return null;
+            }
+        }
+
+        public static async Task<DnsMessage?> ResolveAsync(IEnumerable<IPAddress> ipAddresses, DomainName name,
+            RecordType type, RecordClass recordClass = RecordClass.INet,
+            DnsQueryOptions? options = null, bool isParallel = true)
+        {
+            try
+            {
+                options ??= new DnsQueryOptions();
+                if (isParallel)
+                {
+                    // var items = ipAddresses.Take(6);
+                    foreach (var items in ipAddresses.Chunk(6))
+                    {
+                        var cts = new CancellationTokenSource(Timeout);
+                        var tasks = items.Select(server =>
+                            Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    return await new DnsClient([server],
+                                        [new TcpClientTransport(), new UdpClientTransport()],
+                                        queryTimeout: Timeout).ResolveAsync(name, type,
+                                        recordClass, options, cts.Token);
+                                }
+                                catch
+                                {
+                                    return null;
+                                }
+                            }, cts.Token)).ToList();
+
+                        var completedTask = await Task.WhenAny(tasks);
+                        await cts.CancelAsync();
+
+                        if (await completedTask != null)
+                            return await completedTask;
+                    }
+                }
+
+                return await new DnsClient(ipAddresses, [new TcpClientTransport(), new UdpClientTransport()],
+                    queryTimeout: Timeout).ResolveAsync(name, type, recordClass, options);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+                throw;
             }
         }
     }
