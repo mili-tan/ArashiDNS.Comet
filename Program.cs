@@ -23,6 +23,7 @@ namespace ArashiDNS.Comet
         public static int MinNsTTL = 3600;
         public static int MinTTL = 60;
 
+        public static bool UseLessResponse = false;
         public static bool UseV6Ns = false;
         public static bool UseLog = true;
         public static bool UseResponseCache = false;
@@ -114,12 +115,21 @@ namespace ArashiDNS.Comet
             else
             {
                 var response = query.CreateResponseInstance();
-                response.ReturnCode = answer.ReturnCode;
-                response.IsRecursionAllowed = true;
-                response.IsRecursionDesired = true;
-                response.AnswerRecords.AddRange(answer.AnswerRecords);
+                if (UseLessResponse)
+                {
+                    response.ReturnCode = answer.ReturnCode;
+                    response.IsRecursionAllowed = true;
+                    response.IsRecursionDesired = true;
+                    response.AnswerRecords.AddRange(answer.AnswerRecords);
+                }
+                else
+                {
+                    response = answer;
+                    response.TransactionID = query.TransactionID;
+                    response.IsRecursionAllowed = true;
+                    response.IsRecursionDesired = true;
+                }
                 e.Response = response;
-
                 if (UseResponseCache && answer.ReturnCode is ReturnCode.NoError or ReturnCode.NxDomain)
                     CacheDnsResponse(cacheKey, response);
             }
@@ -479,7 +489,7 @@ namespace ArashiDNS.Comet
 
         public static async Task<DnsMessage?> ResolveAsync(IEnumerable<IPAddress> ipAddresses, DomainName name,
             RecordType type, RecordClass recordClass = RecordClass.INet,
-            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = true)
+            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = false)
         {
             try
             {
