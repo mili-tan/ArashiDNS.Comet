@@ -190,6 +190,7 @@ namespace ArashiDNS.Comet
             var answer = query.CreateResponseInstance();
             var quest = query.Questions.First();
             var cnameFoldCacheKey = $"{quest.Name}:CNAME-FOLD:{quest.RecordClass}";
+            if (UseEcsCache) cnameFoldCacheKey += $":{GetBaseIpFromDns(query)}";
 
             if (UseCnameFoldingCache && DnsResponseCache.TryGetValue(cnameFoldCacheKey, out var nsRootCacheItem) &&
                 !nsRootCacheItem.IsExpired)
@@ -243,8 +244,8 @@ namespace ArashiDNS.Comet
                     {
                         var cnameRecord = cnameAnswer.AnswerRecords
                             .Last(x => x.RecordType == RecordType.CName);
-                        var ttl = Math.Min(cnameAnswer.AnswerRecords.Count > 0
-                            ? cnameAnswer.AnswerRecords.Min(r => r.TimeToLive)
+                        var ttl = Math.Max(cnameAnswer.AnswerRecords.Count > 0
+                            ? cnameAnswer.AnswerRecords.Max(r => r.TimeToLive)
                             : 60, MinTTL);
                         DnsResponseCache[cnameFoldCacheKey] =
                             new CacheItem<DnsMessage>
