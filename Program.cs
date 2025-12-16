@@ -191,6 +191,7 @@ namespace ArashiDNS.Comet
 
         private static async Task<DnsMessage?> DoResolve(DnsMessage query, int cnameDepth = 0)
         {
+            if (cnameDepth > MaxCnameDepth) return null;
             var answer = query.CreateResponseInstance();
             var quest = query.Questions.First();
             var cnameFoldCacheKey = $"{quest.Name}:CNAME-FOLD:{quest.RecordClass}";
@@ -460,18 +461,28 @@ namespace ArashiDNS.Comet
             return nsIps.Distinct().ToList();
         }
 
-        private static async Task<DnsMessage?> ResultResolve(IEnumerable<IPAddress> nsAddresses, DnsMessage query)
+        private static async Task<DnsMessage?> ResultResolve(IEnumerable<IPAddress> nsAddresses, DnsMessage query,
+            int depth = 0)
         {
+            if (depth > MaxCnameDepth) return null;
             try
             {
                 var quest = query.Questions.First();
 
                 var answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
                     options: new DnsQueryOptions
-                        {EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled});
+                    {
+                        EDnsOptions = query.EDnsOptions, IsEDnsEnabled = query.IsEDnsEnabled
+                    });
+
+                if (answer == null ||
+                    (answer.ReturnCode != ReturnCode.NoError && answer.ReturnCode != ReturnCode.NxDomain))
+                    answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
+                        options: new DnsQueryOptions(), isUdpFirst: true) ?? answer;
 
                 if (answer is {AnswerRecords.Count: 0} &&
-                    answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns))
+                    answer.AuthorityRecords.Any(x => x.RecordType == RecordType.Ns) &&
+                    answer.AuthorityRecords.FirstOrDefault(x => x.RecordType == RecordType.Ns)!.Name.LabelCount > 1)
                 {
                     var nsCacheMsg = query.CreateResponseInstance();
                     var ttl = DateTime.UtcNow.AddSeconds(Math.Min(answer.AuthorityRecords.Count > 0
@@ -496,13 +507,14 @@ namespace ArashiDNS.Comet
                     return await ResultResolve(
                         await GetNameServerIp(answer.AuthorityRecords.Where(x => x.RecordType == RecordType.Ns)
                             .Select(x => ((NsRecord) x).NameServer).Order().Take(2)),
-                        query);
+                        query, depth + 1);
                 }
 
-                if (answer == null ||
-                    (answer.ReturnCode != ReturnCode.NoError && answer.ReturnCode != ReturnCode.NxDomain))
+                if (answer is {AnswerRecords.Count: 0} && answer.AuthorityRecords.Any())
+                {
                     answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
-                        options: new DnsQueryOptions()) ?? answer;
+                        options: new DnsQueryOptions() {IsRecursionDesired = true}, isUdpFirst: true) ?? answer;
+                }
 
                 return answer;
             }
@@ -517,6 +529,7 @@ namespace ArashiDNS.Comet
             RecordType type, RecordClass recordClass = RecordClass.INet,
             DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = false)
         {
+            //Console.WriteLine(name + ":" + type + "@" + ipAddresses.First());
             try
             {
                 options ??= new DnsQueryOptions();
