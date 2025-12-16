@@ -45,7 +45,8 @@ namespace ArashiDNS.Comet
 
         static void Main(string[] args)
         {
-            if (!File.Exists("./public_suffix_list.dat"))
+            if (!File.Exists("./public_suffix_list.dat") ||
+                (DateTime.UtcNow - File.GetLastWriteTimeUtc("./public_suffix_list.dat")).TotalDays > 15)
             {
                 Console.WriteLine("Downloading public_suffix_list.dat...");
                 File.WriteAllBytes("./public_suffix_list.dat",
