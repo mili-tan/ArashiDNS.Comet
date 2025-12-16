@@ -15,6 +15,7 @@ namespace ArashiDNS.Comet
             IPAddress.Parse("223.5.5.5"), IPAddress.Parse("119.29.29.29"), IPAddress.Parse("223.6.6.6"),
             IPAddress.Parse("119.28.28.28")
         ];
+
         public static IPEndPoint ListenerEndPoint = new(IPAddress.Loopback, 23353);
         public static TldExtract TldExtractor = new("./public_suffix_list.dat");
 
@@ -28,6 +29,7 @@ namespace ArashiDNS.Comet
         public static bool UseLog = true;
         public static bool UseResponseCache = false;
         public static bool UseCnameFoldingCache = true;
+        public static bool UseEcsCache = true;
 
         public static Timer CacheCleanupTimer;
 
@@ -95,7 +97,7 @@ namespace ArashiDNS.Comet
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
             var quest = query.Questions.First();
-            var cacheKey = GenerateCacheKey(quest);
+            var cacheKey = UseEcsCache ? GenerateCacheKey(query) : GenerateCacheKey(quest);
             if (UseResponseCache && DnsResponseCache.TryGetValue(cacheKey, out var cacheItem) && !cacheItem.IsExpired)
             {
                 var cachedResponse = cacheItem.Value.DeepClone();
@@ -129,6 +131,7 @@ namespace ArashiDNS.Comet
                     response.IsRecursionAllowed = true;
                     response.IsRecursionDesired = true;
                 }
+
                 e.Response = response;
                 if (UseResponseCache && answer.ReturnCode is ReturnCode.NoError or ReturnCode.NxDomain)
                     CacheDnsResponse(cacheKey, response);
@@ -137,6 +140,11 @@ namespace ArashiDNS.Comet
 
         private static string GenerateCacheKey(DnsQuestion question) =>
             $"{question.Name}:{question.RecordType}:{question.RecordClass}";
+
+        private static string GenerateCacheKey(DnsMessage message) {
+            var question = message.Questions.First();
+            return $"{question.Name}:{question.RecordType}:{question.RecordClass}:{GetBaseIpFromDns(message)}";
+        }
 
         private static string GenerateNsCacheKey(DomainName domain, RecordType recordType) =>
             $"{domain}:{recordType}";
@@ -534,6 +542,30 @@ namespace ArashiDNS.Comet
                 Console.WriteLine(e);
                 throw;
             }
+        }
+
+        public static IPAddress GetIpFromDns(DnsMessage dnsMsg)
+        {
+            try
+            {
+                if (dnsMsg is {IsEDnsEnabled: false}) return IPAddress.Any;
+                foreach (var eDnsOptionBase in dnsMsg.EDnsOptions.Options.ToList())
+                {
+                    if (eDnsOptionBase is ClientSubnetOption option)
+                        return option.Address;
+                }
+
+                return IPAddress.Any;
+            }
+            catch (Exception)
+            {
+                return IPAddress.Any;
+            }
+        }
+
+        public static string GetBaseIpFromDns(DnsMessage dnsMsg)
+        {
+            return Convert.ToBase64String(GetIpFromDns(dnsMsg).GetAddressBytes());
         }
     }
 }
