@@ -45,6 +45,17 @@ namespace ArashiDNS.Comet
 
         static void Main(string[] args)
         {
+            if (!File.Exists("./public_suffix_list.dat"))
+            {
+                Console.WriteLine("Downloading public_suffix_list.dat...");
+                File.WriteAllBytes("./public_suffix_list.dat",
+                    new HttpClient()
+                        .GetByteArrayAsync(
+                            "https://publicsuffix.org/list/public_suffix_list.dat")
+                        .Result);
+                TldExtractor = new("./public_suffix_list.dat");
+            }
+
             InitCleanupCacheTask();
 
             var dnsServer = new DnsServer(new UdpServerTransport(ListenerEndPoint),

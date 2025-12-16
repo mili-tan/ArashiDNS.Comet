@@ -13,10 +13,4 @@
     <PackageReference Include="TldExtract" Version="1.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Update="public_suffix_list.dat">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
 </Project>
