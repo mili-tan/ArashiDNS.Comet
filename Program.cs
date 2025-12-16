@@ -144,7 +144,11 @@ namespace ArashiDNS.Comet
                     response.IsRecursionDesired = true;
                 }
 
+                if (!UseEcsCache && response.IsEDnsEnabled && response.EDnsOptions != null)
+                    response.EDnsOptions.Options.RemoveAll(x => x.Type == EDnsOptionType.ClientSubnet);
+
                 e.Response = response;
+
                 if (UseResponseCache && answer.ReturnCode is ReturnCode.NoError or ReturnCode.NxDomain)
                     CacheDnsResponse(cacheKey, response);
             }
