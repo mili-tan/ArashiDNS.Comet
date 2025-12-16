@@ -198,17 +198,17 @@ namespace ArashiDNS.Comet
                 }
             }
 
-            var nsServerNames = await GetNameServerName(quest);
+            var (nsServerNames, nsReturnCode) = await GetNameServerName(quest);
             if (nsServerNames.Count == 0)
             {
-                answer.ReturnCode = ReturnCode.NxDomain;
+                answer.ReturnCode = nsReturnCode;
                 return answer;
             }
 
             var nsServerIPs = await GetNameServerIp(nsServerNames.Order().Take(2));
             if (nsServerIPs.Count == 0)
             {
-                answer.ReturnCode = ReturnCode.NxDomain;
+                answer.ReturnCode = ReturnCode.ServerFailure;
                 return answer;
             }
 
@@ -250,17 +250,17 @@ namespace ArashiDNS.Comet
             return answer;
         }
 
-        private static async Task<List<DomainName>> GetNameServerName(DnsQuestion query)
+        private static async Task<(List<DomainName>, ReturnCode)> GetNameServerName(DnsQuestion query)
         {
             var name = query.Name;
             if (NsQueryCache.TryGetValue(GenerateNsCacheKey(name, RecordType.Ns), out var nsMainCacheItem) &&
                 !nsMainCacheItem.IsExpired)
             {
                 if (UseLog) Task.Run(() => Console.WriteLine($"NS cache hit for: {name}"));
-                return nsMainCacheItem.Value.AnswerRecords
+                return (nsMainCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
                     .Select(x => ((NsRecord) x).NameServer)
-                    .ToList();
+                    .ToList(), ReturnCode.NoError);
             }
 
             var tld = TldExtractor.Extract(name.ToString().Trim('.'));
@@ -276,20 +276,20 @@ namespace ArashiDNS.Comet
                 !nsParentCacheItem.IsExpired)
             {
                 if (UseLog) Task.Run(() => Console.WriteLine($"NS cache hit for: {name.GetParentName()}"));
-                return nsParentCacheItem.Value.AnswerRecords
+                return (nsParentCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
                     .Select(x => ((NsRecord) x).NameServer)
-                    .ToList();
+                    .ToList(), ReturnCode.NoError);
             }
 
             var nsRootCacheKey = GenerateNsCacheKey(rootName, RecordType.Ns);
             if (NsQueryCache.TryGetValue(nsRootCacheKey, out var nsRootCacheItem) && !nsRootCacheItem.IsExpired)
             {
                 if (UseLog) Task.Run(() => Console.WriteLine($"NS cache hit for: {rootName}"));
-                return nsRootCacheItem.Value.AnswerRecords
+                return (nsRootCacheItem.Value.AnswerRecords
                     .Where(x => x.RecordType == RecordType.Ns)
                     .Select(x => ((NsRecord) x).NameServer)
-                    .ToList();
+                    .ToList(), ReturnCode.NoError);
             }
 
             var nsResolve = await ResolveAsync(Servers, rootName, RecordType.Ns, isUdpFirst: true);
@@ -313,8 +313,9 @@ namespace ArashiDNS.Comet
                 if (UseLog) Task.Run(() => Console.WriteLine($"Cached NS records for: {rootName} (TTL: {ttl}s)"));
             }
 
-            return nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
-                .Select(x => ((NsRecord) x).NameServer).ToList() ?? [];
+            return (nsResolve?.AnswerRecords.Where(x => x.RecordType == RecordType.Ns)
+                    .Select(x => ((NsRecord) x).NameServer).ToList() ?? [],
+                nsResolve?.ReturnCode ?? ReturnCode.ServerFailure);
         }
 
         private static async Task<List<DomainName>> GetNameServerName(DomainName name, IPAddress ipAddress)
