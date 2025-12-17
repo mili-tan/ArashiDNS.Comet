@@ -30,6 +30,7 @@ namespace ArashiDNS.Comet
         public static bool UseResponseCache = false;
         public static bool UseCnameFoldingCache = true;
         public static bool UseEcsCache = true;
+        public static bool UseLessEDns = true;
 
         public static Timer CacheCleanupTimer;
 
@@ -468,6 +469,9 @@ namespace ArashiDNS.Comet
             try
             {
                 var quest = query.Questions.First();
+
+                if(UseLessEDns && query.EDnsOptions != null && query.EDnsOptions.Options.Any())
+                    query.EDnsOptions.Options.RemoveAll(x => x.Type != EDnsOptionType.ClientSubnet);
 
                 var answer = await ResolveAsync(nsAddresses, quest.Name, quest.RecordType,
                     options: new DnsQueryOptions
