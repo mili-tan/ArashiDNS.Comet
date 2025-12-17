@@ -529,7 +529,7 @@ namespace ArashiDNS.Comet
             RecordType type, RecordClass recordClass = RecordClass.INet,
             DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = false)
         {
-            //Console.WriteLine(name + ":" + type + "@" + ipAddresses.First());
+            //Console.WriteLine(name + ":" + type + "@" + ipAddresses.First() + ":" + isUdpFirst);
             try
             {
                 options ??= new DnsQueryOptions();
