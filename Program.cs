@@ -30,6 +30,7 @@ namespace ArashiDNS.Comet
         public static bool UseResponseCache = false;
         public static bool UseCnameFoldingCache = true;
         public static bool UseEcsCache = true;
+        public static bool UseEcsAdded = true;
         public static bool UseLessEDns = true;
 
         public static Timer CacheCleanupTimer;
@@ -108,6 +109,23 @@ namespace ArashiDNS.Comet
         private static async Task OnQueryReceived(object sender, QueryReceivedEventArgs e)
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
+
+            try
+            {
+                query.EDnsOptions ??= new OptRecord();
+                if (UseEcsAdded && !query.IsEDnsEnabled ||
+                    query.EDnsOptions!.Options.All(x => x.Type != EDnsOptionType.ClientSubnet))
+                {
+                    Console.WriteLine("ECS Added:" + string.Join(".",
+                        e.RemoteEndpoint.Address.ToString().Split('.').Take(3).Append("0")));
+                    query.IsEDnsEnabled = true;
+                    query.EDnsOptions.Options.Add(new ClientSubnetOption(24, IPAddress.Parse(string.Join(".", e.RemoteEndpoint.Address.ToString().Split('.').Take(3).Append("0")))));
+                }
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine(exception);
+            }
 
             var quest = query.Questions.First();
             var cacheKey = UseEcsCache ? BuildCacheKey(query) : BuildCacheKey(quest);
@@ -532,7 +550,7 @@ namespace ArashiDNS.Comet
 
         public static async Task<DnsMessage?> QueryAsync(IEnumerable<IPAddress> ipAddresses, DomainName name,
             RecordType type, RecordClass recordClass = RecordClass.INet,
-            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = false)
+            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = true)
         {
             //Console.WriteLine(name + ":" + type + "@" + ipAddresses.First() + ":" + isUdpFirst);
             try
