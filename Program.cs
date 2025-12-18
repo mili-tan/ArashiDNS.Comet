@@ -30,7 +30,7 @@ namespace ArashiDNS.Comet
         public static bool UseResponseCache = false;
         public static bool UseCnameFoldingCache = true;
         public static bool UseEcsCache = true;
-        public static bool UseEcsAdded = true;
+        public static bool UseEcsAdded = false;
         public static bool UseLessEDns = true;
 
         public static Timer CacheCleanupTimer;
@@ -110,6 +110,30 @@ namespace ArashiDNS.Comet
         {
             if (e.Query is not DnsMessage query || query.Questions.Count == 0) return;
 
+            var quest = query.Questions.First();
+
+            if (quest.RecordType == RecordType.Any &&
+                (Equals(ListenerEndPoint.Address, IPAddress.Any) ||
+                 Equals(ListenerEndPoint.Address, IPAddress.IPv6Any)))
+            {
+                var msg = query.CreateResponseInstance();
+                msg.AnswerRecords.Add(
+                    new HInfoRecord(quest.Name, 3600, "ANY Obsoleted", "RFC8482"));
+                e.Response = msg;
+                return;
+            }
+
+            if (query.Questions.First().RecordClass == RecordClass.Chaos && query.Questions.First().RecordType == RecordType.Txt &&
+                query.Questions.First().Name.IsEqualOrSubDomainOf(DomainName.Parse("version.bind")))
+            {
+                var msg = query.CreateResponseInstance();
+                msg.AnswerRecords.Add(
+                    new TxtRecord(query.Questions.First().Name, 3600, "ArashiDNS.Comet"));
+                e.Response = msg;
+
+                return;
+            }
+
             try
             {
                 query.EDnsOptions ??= new OptRecord();
@@ -127,7 +151,6 @@ namespace ArashiDNS.Comet
                 Console.WriteLine(exception);
             }
 
-            var quest = query.Questions.First();
             var cacheKey = UseEcsCache ? BuildCacheKey(query) : BuildCacheKey(quest);
             if (UseResponseCache && DnsResponseCache.TryGetValue(cacheKey, out var cacheItem) && !cacheItem.IsExpired)
             {
