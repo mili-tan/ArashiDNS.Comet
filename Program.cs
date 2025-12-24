@@ -610,9 +610,13 @@ namespace ArashiDNS.Comet
                             return await completedTask;
                     }
                 }
+                else 
+                    return await new DnsClient(ipAddresses, isUdpFirst
+                            ? [new UdpClientTransport(), new TcpClientTransport()]
+                            : [new TcpClientTransport(), new UdpClientTransport()],
+                        queryTimeout: Timeout).ResolveAsync(name, type, recordClass, options);
 
-                return await new DnsClient(ipAddresses, [new TcpClientTransport(), new UdpClientTransport()],
-                    queryTimeout: Timeout).ResolveAsync(name, type, recordClass, options);
+                return null;
             }
             catch (Exception e)
             {
