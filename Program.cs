@@ -77,7 +77,7 @@ namespace ArashiDNS.Comet
                     .GetStringAsync(
                         "https://fastly.jsdelivr.net/gh/indianajson/cloudflare-nameservers@main/cloudflare-names.txt")
                     .Result.Split('\n').Skip(1).ToList();
-                Parallel.ForEach(cfNsList, item =>
+                Parallel.ForEach(cfNsList, new ParallelOptions { MaxDegreeOfParallelism = 3 }, item =>
                 {
                     Console.WriteLine("NS WarmUp: " + item);
                     _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
