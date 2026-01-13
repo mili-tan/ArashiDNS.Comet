@@ -33,6 +33,8 @@ namespace ArashiDNS.Comet
         public static bool UseEcsAdded = false;
         public static bool UseLessEDns = true;
 
+        public static bool UseNsWarmUp = true;
+
         public static Timer CacheCleanupTimer;
 
         public class CacheItem<T>
@@ -68,6 +70,20 @@ namespace ArashiDNS.Comet
 
             Console.WriteLine("Now listening on: " + ListenerEndPoint);
             Console.WriteLine("Application started. Press Ctrl+C / q to shut down.");
+
+            if (UseNsWarmUp)
+            {
+                var cfNsList = new HttpClient()
+                    .GetStringAsync(
+                        "https://fastly.jsdelivr.net/gh/indianajson/cloudflare-nameservers@main/cloudflare-names.txt")
+                    .Result.Split('\n').Skip(1).ToList();
+                Parallel.ForEach(cfNsList, item =>
+                {
+                    Console.WriteLine("NS WarmUp: " + item);
+                    _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
+                });
+            }
+
             if (!Console.IsInputRedirected && Console.KeyAvailable)
             {
                 while (true)
