@@ -107,6 +107,7 @@ a1-122.akam.net.
 a1-124.akam.net.
 a1-125.akam.net.
 a1-127.akam.net.
+a1-128.akadns.net.
 a1-128.akadns88.net.
 a1-129.akam.net.
 a1-130.akam.net.
@@ -285,6 +286,7 @@ a1-78.akam.net.
 a1-79.akam.net.
 a1-8.akam.net.
 a1-80.akam.net.
+a18-128.akagtm.org.
 a1-82.akam.net.
 a1-83.akam.net.
 a1-84.akam.net.
@@ -331,11 +333,13 @@ a26-65.akam.net.
 a26-66.akam.net.
 a26-67.akam.net.
 a2-67.akam.net.
+a28-129.akagtm.org.
 a28-131.akadns88.net.
 a28-64.akam.net.
 a28-65.akam.net.
 a28-66.akam.net.
 a28-67.akam.net.
+a3-129.akadns.net.
 a3-193.akamaitech.net.
 a3-194.akaquill.net.
 a3-194.akasripcn.net.
@@ -346,13 +350,16 @@ a3-67.akam.net.
 a4-131.akadns88.net.
 a4-194.akaquill.net.
 a42-128.akadns88.net.
+a42-130.akagtm.org.
 a42-131.akadns99.net.
 a42-65.akam.net.
 a44-128.akadns88.net.
 a44-130.akadns99.net.
+a44-131.akadns.net.
 a44-65.akam.net.
 a4-54.akam.net.
 a46-128.akadns88.net.
+a46-129.akadns.net.
 a46-130.akadns99.net.
 a4-64.akam.net.
 a4-65.akam.net.
@@ -376,6 +383,7 @@ a6-65.akam.net.
 a6-66.akam.net.
 a6-67.akam.net.
 a7.dns.fedex.com.
+a7-130.akagtm.org.
 a7-194.akaquill.net.
 a7-194.akasripcn.net.
 a7-64.akam.net.
@@ -383,6 +391,7 @@ a7-65.akam.net.
 a7-66.akam.net.
 a7-67.akam.net.
 a8.dns.fedex.com.
+a8-130.akadns.net.
 a8-130.akadns88.net.
 a8-64.akam.net.
 a8-65.akam.net.
@@ -3207,6 +3216,7 @@ ns1.cisco.com.
 ns1.claro.com.ar.
 ns1.cloud.site.sa.
 ns1.cloudez.io.
+ns1.cloudflare-dns.com.
 ns1.cmbc.com.cn.
 ns1.cmbchina.com.
 ns1.cmmobile.cn.
@@ -5681,6 +5691,7 @@ ns2.cisco.com.
 ns2.claro.com.ar.
 ns2.cloud.site.sa.
 ns2.cloudez.io.
+ns2.cloudflare-dns.com.
 ns2.cloudns.net.
 ns2.cmbc.com.cn.
 ns2.cmbchina.com.
@@ -6936,6 +6947,8 @@ ns3.charter.com.
 ns3.chinanetcenter.com.
 ns3.cisco.com.
 ns3.cloudez.io.
+ns3.cloudflare.com.
+ns3.cloudflare-dns.com.
 ns3.cmbc.com.cn.
 ns3.cmbchina.com.
 ns3.cnrs.fr.
@@ -7717,6 +7730,7 @@ ns4.changeip.com.
 ns4.charter.com.
 ns4.chinanetcenter.com.
 ns4.cloudez.io.
+ns4.cloudflare.com.
 ns4.cmbchina.com.
 ns4.cnrs.fr.
 ns4.combell.net.
@@ -8265,6 +8279,7 @@ ns5.cenic.org.
 ns5.changeip.com.
 ns5.chinanetcenter.com.
 ns5.cloudez.io.
+ns5.cloudflare.com.
 ns5.cmbc.com.cn.
 ns5.cnmsn.net.
 ns5.cpi.ad.jp.
@@ -8542,6 +8557,7 @@ ns6.capitalone.com.
 ns6.cbr.ru.
 ns6.cenic.org.
 ns6.changeip.com.
+ns6.cloudflare.com.
 ns6.cmbc.com.cn.
 ns6.cnmsn.net.
 ns6.cpi.ad.jp.
@@ -8769,6 +8785,7 @@ ns7.badoo.com.
 ns7.baidu.com.
 ns7.bitmaster.ru.
 ns7.bumble.com.
+ns7.cloudflare.com.
 ns7.cnmsn.net.
 ns7.cpi.ad.jp.
 ns7.ctrip.com.
