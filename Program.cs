@@ -84,6 +84,14 @@ namespace ArashiDNS.Comet
                 });
             }
 
+            if (File.Exists("warmup.csv"))
+                Parallel.ForEach(File.ReadLines("warmup.csv"), new ParallelOptions {MaxDegreeOfParallelism = 3},
+                    item =>
+                    {
+                        Console.WriteLine("NS WarmUp: " + item);
+                        _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
+                    });
+
             if (!Console.IsInputRedirected && Console.KeyAvailable)
             {
                 while (true)
