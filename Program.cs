@@ -85,11 +85,19 @@ namespace ArashiDNS.Comet
                         "https://fastly.jsdelivr.net/gh/indianajson/cloudflare-nameservers@main/cloudflare-names.txt")
                     .Result.Split('\n').Skip(1).ToList());
 
-                Parallel.ForEach(nsList, new ParallelOptions { MaxDegreeOfParallelism = 3 }, item =>
-                {
-                    Console.WriteLine("NS WarmUp: " + item);
-                    _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
-                });
+                Parallel.ForEach(nsList.Where(x => !string.IsNullOrWhiteSpace(x)),
+                    new ParallelOptions {MaxDegreeOfParallelism = 3}, item =>
+                    {
+                        try
+                        {
+                            Console.WriteLine("NS WarmUp: " + item);
+                            _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())], true);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e);
+                        }
+                    });
             }
 
             if (File.Exists("warmup.csv"))
@@ -97,7 +105,7 @@ namespace ArashiDNS.Comet
                     item =>
                     {
                         Console.WriteLine("NS WarmUp: " + item);
-                        _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
+                        _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())], true);
                     });
 
             if (!Console.IsInputRedirected && Console.KeyAvailable)
@@ -445,7 +453,8 @@ namespace ArashiDNS.Comet
                 .Select(x => ((NsRecord)x).NameServer).ToList() ?? [];
         }
 
-        private static async Task<List<IPAddress>> GetAuthorityServerIps(IEnumerable<DomainName> nsServers)
+        private static async Task<List<IPAddress>> GetAuthorityServerIps(IEnumerable<DomainName> nsServers,
+            bool isUseRnd = false)
         {
             var nsIps = new List<IPAddress>();
 
@@ -457,7 +466,7 @@ namespace ArashiDNS.Comet
                 {
                     var cachedIps = aCacheItem.Value.AnswerRecords
                         .Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
@@ -470,7 +479,7 @@ namespace ArashiDNS.Comet
                 {
                     var cachedIps = aaaaCacheItem.Value.AnswerRecords
                         .Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(cachedIps);
@@ -478,12 +487,12 @@ namespace ArashiDNS.Comet
                     return;
                 }
 
-                var nsARecords = (await QueryAsync(Servers, item, RecordType.A, isUdpFirst: true))?.AnswerRecords ??
-                                 [];
+                var nsARecords = (await QueryAsync(Servers, item, RecordType.A, isUdpFirst: true, isUseRnd: isUseRnd))
+                                 ?.AnswerRecords ?? [];
                 if (nsARecords.Any(x => x.RecordType == RecordType.A))
                 {
                     var addresses = nsARecords.Where(x => x.RecordType == RecordType.A)
-                        .Select(x => ((ARecord)x).Address)
+                        .Select(x => ((ARecord) x).Address)
                         .ToList();
 
                     lock (nsIps) nsIps.AddRange(addresses);
@@ -505,12 +514,12 @@ namespace ArashiDNS.Comet
                 else if (UseV6Ns)
                 {
                     var nsAaaaRecords =
-                        (await QueryAsync(Servers, item, RecordType.Aaaa, isUdpFirst: true))
+                        (await QueryAsync(Servers, item, RecordType.Aaaa, isUdpFirst: true, isUseRnd: isUseRnd))
                         ?.AnswerRecords ?? [];
                     if (nsAaaaRecords.Any(x => x.RecordType == RecordType.A))
                     {
                         var addresses = nsAaaaRecords.Where(x => x.RecordType == RecordType.Aaaa)
-                            .Select(x => ((AaaaRecord)x).Address)
+                            .Select(x => ((AaaaRecord) x).Address)
                             .ToList();
 
                         lock (nsIps) nsIps.AddRange(addresses);
@@ -605,9 +614,11 @@ namespace ArashiDNS.Comet
 
         public static async Task<DnsMessage?> QueryAsync(IEnumerable<IPAddress> ipAddresses, DomainName name,
             RecordType type, RecordClass recordClass = RecordClass.INet,
-            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = true)
+            DnsQueryOptions? options = null, bool isParallel = true, bool isUdpFirst = true, bool isUseRnd = false)
         {
             //Console.WriteLine(name + ":" + type + "@" + ipAddresses.First() + ":" + isUdpFirst);
+            if (isUseRnd) ipAddresses = ipAddresses.OrderBy(x => new Random(DateTime.UtcNow.Microsecond).Next());
+
             try
             {
                 //options ??= new DnsQueryOptions() {IsRecursionDesired = true};
