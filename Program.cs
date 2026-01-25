@@ -73,11 +73,19 @@ namespace ArashiDNS.Comet
 
             if (UseNsWarmUp)
             {
-                var cfNsList = new HttpClient()
+                var nsList = new List<string>();
+
+                nsList.AddRange(new HttpClient()
+                    .GetStringAsync(
+                        "https://fastly.jsdelivr.net/gh/mili-tan/ArashiDNS.Comet@main/nslist/top10k-ns.list")
+                    .Result.Split('\n').Skip(1).ToList());
+
+                nsList.AddRange(new HttpClient()
                     .GetStringAsync(
                         "https://fastly.jsdelivr.net/gh/indianajson/cloudflare-nameservers@main/cloudflare-names.txt")
-                    .Result.Split('\n').Skip(1).ToList();
-                Parallel.ForEach(cfNsList, new ParallelOptions { MaxDegreeOfParallelism = 3 }, item =>
+                    .Result.Split('\n').Skip(1).ToList());
+
+                Parallel.ForEach(nsList, new ParallelOptions { MaxDegreeOfParallelism = 3 }, item =>
                 {
                     Console.WriteLine("NS WarmUp: " + item);
                     _ = GetAuthorityServerIps([DomainName.Parse(item.Trim())]);
