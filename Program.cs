@@ -33,7 +33,7 @@ namespace ArashiDNS.Comet
         public static bool UseEcsAdded = false;
         public static bool UseLessEDns = true;
 
-        public static bool UseNsWarmUp = true;
+        public static bool UseNsWarmUp = false;
 
         public static Timer CacheCleanupTimer;
 
